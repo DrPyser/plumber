@@ -1,6 +1,11 @@
+"""
+This module implement command execution using trio.
+commands are programs that are executed in subprocesses
+and receive a plumb message through their standard input.
+"""
 import trio
 import subprocess
-from plumber.common import PlumbMsg
+from plumber.message import PlumbMsg
 from plumber.utils import iterlines
 import typing
 import json
@@ -53,6 +58,7 @@ async def feed_input(stream, input_data):
 
             
 class Executor:
+    """Execute a command in a subprocess, with a plumb message passed through its standard input"""
     #__slots__ = [""]
     def __init__(self, serializer, stdout_handler, stderr_handler, logger):
         self.serializer = serializer
@@ -68,6 +74,7 @@ class Executor:
                 input_data = self.serializer(msg) + b"\n"
                 self.logger.debug("input=%s", input_data)
                 nursery.start_soon(feed_input, proc.stdin, input_data)
+                # TODO: havef handlers return BytesIO or StringIO on start and write to it
                 stdout_capture = await nursery.start(self.stdout_handler, proc.stdout)                
                 stderr_capture = await nursery.start(self.stderr_handler, proc.stderr)
                 await proc.wait()
