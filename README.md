@@ -14,7 +14,8 @@ The goal is to implement something like the plan 9 plumber system, in python, fo
   * configuration
     * config file
 	* dynamic(command interface)
-  * regex-based matching, 
+  * matching
+    * regex
 
 
 ## Concerns & design philosophy
