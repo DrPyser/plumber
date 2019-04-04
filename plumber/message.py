@@ -4,6 +4,38 @@ according to the format described in plan 9 plumb documentation
 (see https://9fans.github.io/plan9port/man/man7/plumb.html)
 """
 import typing
+import construct
+
+header_line = construct.NullTerminated(
+    construct.GreedyString("utf-8"),
+    term=b"\n"
+)
+
+def decode_attrs(raw: str) -> dict:
+    import shlex
+    pairs = shlex.split(raw)
+    attrs = dict(
+        p.split("=", maxsplit=1)
+        for p in pairs
+    )
+    return attrs
+
+
+def encode_attrs(attrs: dict) -> str:
+    return " ".join(f"{k}=\"{str(v)}\"" for k, v in attrs.items())
+
+
+PlumbMessageFormat = construct.Struct(
+    "src" / header_line,
+    "dst" / header_line,
+    "type" / header_line,
+    "attrs" / header_line,
+    "ndata" / construct.Rebuild(
+        header_line,
+        lambda this: str(len(this.data))
+    ),
+    "data" / construct.Byte[lambda this: int(this.ndata)]
+)
 
 
 class PlumbMsg(typing.NamedTuple):
@@ -14,53 +46,31 @@ class PlumbMsg(typing.NamedTuple):
     ndata: int
     data: bytes
 
-    def __str__(self):
-        head = "{}\n{}\n{}\n{}\n{}\n".format(
-            self.src,
-            self.dst,
-            self.type,
-            " ".join(
-                k+"="+v
-                for k,v in self.attrs.items()
-            ),
-            self.ndata
-        )
-        return head.encode("utf-8") + self.data
-
     
 class ParseError(ValueError):
     pass
     
 
-def parse_message(msg: bytes) -> PlumbMsg:
-    fields = msg.split(b"\n", maxsplit=5)
-    if len(fields) != 6:
-        raise ParseError
-    raw_src, raw_dst, raw_mtype, raw_attrs, raw_ndata, raw_data = fields
-    src = raw_src.decode("utf-8")
-    dst = raw_dst.decode("utf-8")
-    mtype = raw_mtype.decode("utf-8")
-    # TODO: fix this to support whitespace in quoted values
-    attrs_pairs = raw_attrs.decode("utf-8").split()
-    # TODO: values can be in quotes, and should be parsed accordingly("evaluated")
-    attrs = dict(
-        (k, v)
-        for k, v in (
-            p.split("=", maxsplit=1)
-            for p in attrs_pairs
-        )
-    )
-    ndata = int(raw_ndata.decode("utf-8")) if len(raw_ndata) != 0 else None
-    data = raw_data # data is kept as raw bytes
-    if ndata is not None and len(data) != ndata:
-        raise ParseError
+def decode(msg: bytes) -> PlumbMsg:
+    msg = PlumbMessageFormat.parse(msg)
     
     return PlumbMsg(
-        src=src,
-        dst=dst,
-        type=mtype,
-        attrs=attrs,
-        ndata=ndata,
-        data=data
+        src=msg.src,
+        dst=msg.dst,
+        type=msg.type,
+        attrs=decode_attrs(msg.attrs),
+        ndata=int(msg.ndata),
+        data=bytes(msg.data)
     )
 
+
+def encode(msg: PlumbMsg) -> bytes:
+    fields = dict(
+        src=msg.src,
+        dst=msg.dst,
+        type=msg.type,
+        attrs=encode_attrs(msg.attrs),
+        ndata=str(msg.ndata),
+        data=msg.data
+    )
+    return PlumbMessageFormat.build(fields)
